@@ -1,10 +1,24 @@
-# cbBTC high-conviction swing experiment
+# Volatility-breakout final fixed test
 
 [![make.fun · btc-race-24h-20261118-1444](https://make.fun/badge/btc-race-24h-20261118-1444.svg)](https://make.fun/bounty/btc-race-24h-20261118-1444?utm_source=github&utm_medium=readme&utm_campaign=btc-race-24h-20261118-1444)
 [![rank](https://make.fun/badge/btc-race-24h-20261118-1444/argaromit-lab/btc-race-24h-20261118-1444/rank.svg)](https://make.fun/bounty/btc-race-24h-20261118-1444/leaderboard?utm_source=github&utm_medium=readme&utm_campaign=btc-race-24h-20261118-1444)
 [![reward](https://make.fun/badge/btc-race-24h-20261118-1444/argaromit-lab/btc-race-24h-20261118-1444/reward.svg)](https://make.fun/bounty/btc-race-24h-20261118-1444?utm_source=github&utm_medium=readme&utm_campaign=btc-race-24h-20261118-1444)
 
-**Test branch only: the swing candidate fails the user's required Net PnL >15 USDC gate. It is not merged or submitted.** The protected `main` branch stays at `071720f14f9dd6b8875edb9f272eeb1f9408fc35`; the already accepted race entry remains pinned to `7d59a1fd9fa9dd5234c9cdc387f6e255567d5e54`.
+**Current test: +0.708340 USDC net PnL, 0.3098174% maximum drawdown, 25 fills. No merge or submit.** The user's final rule requires >10 USDC and at most 15% drawdown; this result is also below the explicit +5 USDC preservation threshold. Default `main` remains `071720f14f9dd6b8875edb9f272eeb1f9408fc35`, and the accepted entry remains pinned to `7d59a1fd9fa9dd5234c9cdc387f6e255567d5e54`.
+
+Branch `volatility-breakout-final` tests one fixed configuration: a 45-minute high breakout more than 28 bps above EMA-60; relative single-bar volume above 1.6 times its preceding 30-bar mean when volume exists, otherwise an explicitly labeled true-range proxy because official volume is null; up to three consecutive planned slices, each no more than 35% of equity and an estimated 1.8 bps of pool depth; a latched 2.5 x ATR-30 trailing stop only after marked profit exceeds 35 bps; a four-hour holding limit; and a 15% account halt. Downside breakouts can close longs; shorts are not permitted. Normal exits are also sliced. Protective stops may act earlier. Future depth and gaps prevent a guaranteed impact/drawdown ceiling.
+
+The official kit ran the final code twice with matching action logs and a reproduced L1 regrade. Fees alone are 1.356533 USDC, return is +0.0708340%, and no order was rejected. No parameter search was run for this last configuration. Raw reports are in ignored `local-grade-volatility-final/`.
+
+```sh
+node btc-race-24h-20261118-1444-kit/cli/makefun.mjs grade-local --kit btc-race-24h-20261118-1444-kit --bot . --driver process --worktree --save local-grade-volatility-final --json
+```
+
+Action-log digest: `ee2caf07b06c036f6c449dca979f3357fe0b11de76392ab1abe3e5cfd5957b62`.
+
+## Archived parent swing report
+
+The remainder below documents the earlier `high-conviction-swing` parent, not this final fixed configuration. Its source and commands must be read in that parent commit. The protected main and accepted entry are unchanged.
 
 This branch tests a deterministic, long-only EMA-12/36/96 trend and swing bot for make.fun's `btc-race-24h-20261118-1444` bounty, built for `@argaromit`. The complete official dev replay returns **-8.030987 USDC**, with **0.8600817% maximum drawdown** and **20 fills**.
 

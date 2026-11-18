@@ -6,15 +6,15 @@ type Hello = {protocol: string; symbols: {symbol: string; price_scale: number; q
 type Batch = {type: 'batch'; seq: number; t: number; bars: Bar[]; fills: {client_id: string; side: string; status: string}[]; account: {cash_quote_units: string; equity_quote_units: string; positions: Position[]}};
 type Point = {close: number; high: number; low: number; range: number; fast: number; volume: number | null};
 
-const POLICY = Object.freeze({breakout: 30, minimumMove: 35, activity: 1.0, trail: 40, hold: 60});
-const fastSpan = 12, mediumSpan = 36, slowSpan = 96;
+const POLICY = Object.freeze({breakout: 45, minimumMove: 28, activity: 1.6, trail: 2.5, hold: 240});
+const fastSpan = 12, mediumSpan = 36, slowSpan = 60;
 let priceScale = 5, quantityScale = 8, quoteScale = 6;
 let fees = 4, slippage = 2, maximumWeight = 10000, warmup = 0;
 let minimumNotional = 1000000n;
 let peakEquity = 1000000000n;
-let reduced = false, halted = false, closing = false;
+let reduced = false, halted = false, closing = false, trailingArmed = false;
 let fast: number | null = null, medium: number | null = null, slow: number | null = null;
-let lastTimestamp = -1, openedAt = -1, positionHigh = 0, additions = 0, lastExit = -100;
+let lastTimestamp = -1, openedAt = -1, positionHigh = 0, additions = 0, lastExit = -100, entryLevel = 0;
 const points: Point[] = [];
 const seeds = new Map<number, number[]>();
 
@@ -63,15 +63,15 @@ function meanRange(from: number, to: number): number {
 }
 
 function activityRatio(): number {
-  const recent = points.slice(-5), prior = points.slice(-25, -5);
-  const volumeKnown = recent.length === 5 && prior.length === 20 && [...recent, ...prior].every((point) => point.volume !== null);
+  const recent = points.slice(-1), prior = points.slice(-31, -1);
+  const volumeKnown = recent.length === 1 && prior.length === 30 && [...recent, ...prior].every((point) => point.volume !== null);
   if (volumeKnown) {
     const before = prior.reduce((sum, point) => sum + point.volume!, 0) / prior.length;
     const now = recent.reduce((sum, point) => sum + point.volume!, 0) / recent.length;
     return before > 0 ? now / before : 0;
   }
   // Pool-state input has null volume. This is range activity, never reported as measured volume.
-  const before = meanRange(-25, -5), now = meanRange(-5, points.length);
+  const before = meanRange(-31, -1), now = meanRange(-1, points.length);
   return before > 0 ? now / before : now > 0 ? 1 : 0;
 }
 
@@ -107,8 +107,8 @@ function chooseOrder(batch: Batch): Record<string, unknown>[] {
   const cash = BigInt(batch.account.cash_quote_units), equity = BigInt(batch.account.equity_quote_units);
   if (equity >= peakEquity) { peakEquity = equity; reduced = false; }
   const drawdown = peakEquity > 0n ? Number((peakEquity - equity) * 10000n / peakEquity) : 0;
-  if (drawdown >= 600) reduced = true;
-  if (drawdown >= 1000) { halted = true; closing = true; }
+  if (drawdown >= 1000) reduced = true;
+  if (drawdown >= 1500) { halted = true; closing = true; }
   for (const fill of batch.fills) if (fill.side === 'buy' && fill.status === 'filled') additions++;
   const held = batch.account.positions.find((position) => position.symbol === 'CBBTC');
   if (!held) {
@@ -117,20 +117,22 @@ function chooseOrder(batch: Batch): Record<string, unknown>[] {
     positionHigh = 0;
     additions = 0;
     closing = false;
+    trailingArmed = false;
   }
   if (batch.seq < warmup) return [];
 
-  const atr = meanRange(-20, points.length);
+  const atr = meanRange(-30, points.length);
   const momentum15 = returnBps(15), momentum30 = returnBps(30);
-  const regime = fast !== null && medium !== null && slow !== null && fast > medium && medium > slow;
+  const regime = slow !== null && close > slow;
   const slope5 = points.length > 5 && fast !== null ? (fast / points[points.length - 6].fast - 1) * 10000 : 0;
   // A causal trend projection, not a calibrated promise of future return.
   const moveBudget = Math.min(Math.max(momentum30, momentum15 * 2), Math.max(0, slope5) * 6);
-  const conviction = regime && momentum15 > 0 && momentum30 > 0 && moveBudget > POLICY.minimumMove;
+  const distance = slow !== null ? (close / slow - 1) * 10000 : 0;
+  const conviction = regime && distance > POLICY.minimumMove;
   const depth = depthQuoteUnits(bar);
   if (!(depth > 0) || !Number.isFinite(depth)) return [];
-  // Buffer below the requested 5 bps; the next open depth is not known yet.
-  const impactRoom = BigInt(Math.floor(depth * 4.5 / 10000));
+  // Buffer below 2 bps; the next open depth is not known yet.
+  const impactRoom = BigInt(Math.floor(depth * 1.8 / 10000));
   const positionValue = held ? valueAt(BigInt(held.qty), bar.c) : 0n;
 
   if (held) {
@@ -140,25 +142,29 @@ function chooseOrder(batch: Batch): Record<string, unknown>[] {
     positionHigh = Math.max(positionHigh, close);
     const age = batch.seq - openedAt + 1;
     const initialStop = Math.max(35, Math.min(80, atr * 2));
-    const trailingDistance = Math.max(POLICY.trail, Math.min(150, atr * 3));
+    if (gain > 35) trailingArmed = true;
+    const trailingDistance = Math.max(1, atr * POLICY.trail);
     const initialFailure = gain <= -initialStop;
-    const trailingFailure = (gain >= 25 || age >= 15) && close <= positionHigh * (1 - trailingDistance / 10000);
-    const trendFailure = age >= 15 && fast !== null && medium !== null && fast <= medium && momentum15 < 0;
-    if (halted || initialFailure || trailingFailure || trendFailure || age >= POLICY.hold) closing = true;
+    const trailingFailure = trailingArmed && close <= positionHigh * (1 - trailingDistance / 10000);
+    const priorLow = Math.min(...points.slice(-46, -1).map((point) => point.low));
+    const lowerBreakout = close < priorLow && distance < -28 && activityRatio() >= POLICY.activity;
+    const trendFailure = age >= 60 && slow !== null && close < slow && momentum15 < 0;
+    if (halted || initialFailure || trailingFailure || lowerBreakout || trendFailure || age >= POLICY.hold) closing = true;
     if (closing) {
-      const emergency = drawdown >= 1150;
+      const emergency = drawdown >= 1500;
       let sold = emergency || positionValue <= impactRoom ? quantity : quantityAt(impactRoom, bar.c);
       if (sold > quantity) sold = quantity;
       if (sold <= 0n || (sold < quantity && valueAt(sold, bar.c) < minimumNotional)) return [];
       return [{side: 'sell', client_id: `out${batch.seq}`, symbol: 'CBBTC', qty: sold.toString(), max_slippage_bps: emergency ? 10000 : 125}];
     }
-    // Build only while the already-held trade is non-losing and conviction persists.
-    if (reduced || additions >= 3 || age > 8 || positionValue < cost || !conviction) return [];
+    // Preplanned slices only while the original breakout level remains intact.
+    if (reduced || additions >= 3 || age > 2 || close < entryLevel || !conviction) return [];
   } else {
     if (halted || !conviction || batch.seq - lastExit < 5 || points.length < slowSpan) return [];
     const prior = points.slice(-POLICY.breakout - 1, -1);
     const ceiling = Math.max(...prior.map((point) => point.high));
     if (close < ceiling || close <= previousClose || activityRatio() < POLICY.activity) return [];
+    entryLevel = ceiling;
   }
 
   const desired = equity * BigInt(reduced ? 2500 : 9000) / 10000n;
@@ -166,10 +172,12 @@ function chooseOrder(batch: Batch): Record<string, unknown>[] {
   const target = desired < permitted ? desired : permitted;
   const room = target > positionValue ? target - positionValue : 0n;
   let notional = room < cash ? room : cash;
+  const perBar = equity * 3500n / 10000n;
+  if (notional > perBar) notional = perBar;
   if (notional > impactRoom) notional = impactRoom;
   if (notional < minimumNotional) return [];
   const roundTripCost = 2 * (fees + slippage + Number(notional) / depth * 10000);
-  if (moveBudget <= roundTripCost + 4) return [];
+  if (distance <= roundTripCost + 4) return [];
   return [{side: 'buy', client_id: `build${batch.seq}`, symbol: 'CBBTC', notional_quote_units: notional.toString(), max_slippage_bps: 125}];
 }
 
