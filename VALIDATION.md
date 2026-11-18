@@ -1,4 +1,6 @@
-# Development validation
+# Conservative reference validation (commit 071720f)
+
+This is the previous conservative candidate's report. The current aggressive experiment branch uses a different `main.ts`; its results are in `AGGRESSIVE_RESULTS.md` and its test command is `node verify-aggressive.mjs --save`.
 
 The bot was built in one OpenCode session for the account `@argaromit`. The source is original code written in that session. No existing baseline implementation or third-party strategy was copied into the bot.
 
