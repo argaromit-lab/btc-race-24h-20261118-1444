@@ -63,7 +63,7 @@ let exitPending = false;
 let minimumNotional = 1_000_000n;
 let maximumWeight = 10_000;
 // Observe non-overlapping paper setups before enabling the momentum sleeve.
-// A sample is usable only after both its next open and its 15-minute outcome arrived.
+// Each outcome enters the estimate only after its next open and full horizon arrived.
 const momentumObservations: { seq: number; open: number | null }[] = [];
 const momentumEdges: number[] = [];
 let nextMomentumObservation = 0;
@@ -196,7 +196,7 @@ function chooseOrder(batch: Batch): Record<string, unknown>[] {
   const flow = volumeWeightedReturn(history, 5);
   const band = priceBand(history, 30);
   const zScore = band.z;
-  const equityCircuit = drawdown >= 0.105;
+  const equityCircuit = drawdown >= 0.095;
   for (const observation of momentumObservations) {
     if (batch.seq === observation.seq + 1) observation.open = Number(bar.o);
     if (observation.seq >= 0 && batch.seq >= observation.seq + 16) {
@@ -242,12 +242,12 @@ function chooseOrder(batch: Batch): Record<string, unknown>[] {
     const marketValue = valueAt(quantity, bar.c);
     const gainBps = cost > 0n ? Number((marketValue - cost) * 10_000n / cost) : 0;
     const age = batch.seq - entrySeq;
-    const stopDistance = Math.max(80, Math.min(180, atr * 5));
+    const stopDistance = Math.max(80, Math.min(120, atr * 5));
     const trailingStop = positionHigh * (1 - stopDistance / 10_000);
-    const hardStop = gainBps <= -100;
+    const hardStop = gainBps <= -80;
     const trendFailed = entryKind === 'trend' && fast < medium && mediumReturn < -MIN_EDGE_BPS;
-    const targetReached = gainBps >= (entryKind === 'reversion' ? 25 : 75);
-    const meanReverted = entryKind === 'reversion' && gainBps >= 45;
+    const targetReached = gainBps >= (entryKind === 'reversion' ? 30 : 75);
+    const meanReverted = entryKind === 'reversion' && gainBps >= 60;
     const exit = stopTriggered || price <= trailingStop || hardStop || trendFailed || meanReverted || age >= (entryKind === 'reversion' ? 40 : 120);
     if (exit || exitPending) {
       exitPending = true;
@@ -267,26 +267,28 @@ function chooseOrder(batch: Batch): Record<string, unknown>[] {
 
   if (stopTriggered || drawdown >= 0.085 || cash < minimumNotional || history.length < 31) return [];
   const breakout = price >= Math.max(...history.slice(-31, -1).map((point) => point.high));
-  const trendSignal = momentumConfirmed && breakout && history.length >= 120 && fast > medium && medium > slow && returnBps(history, 120) > 100 && longReturn > 60 && mediumReturn > 30 && shortReturn > 10 && flow > 0 && vol5 < Math.max(15, vol30 * 2);
+  const trendSignal = momentumConfirmed && breakout && history.length >= 120 && fast > medium && medium > slow
+    && returnBps(history, 120) > 100 && longReturn > 60 && mediumReturn > 30
+    && shortReturn > 10 && flow > 0 && vol5 < Math.max(15, vol30 * 2);
   const oversold = zScore < -1.5 && band.edgeBps > MIN_EDGE_BPS;
-  const reversal = shortReturn > -10;
+  const reversal = shortReturn > -5;
   const meanReversionSignal = oversold && reversal;
   if (!trendSignal && !meanReversionSignal) return [];
 
-  const exposure = drawdown >= 0.06 ? 0.08 : drawdown >= 0.03 ? 0.15 : 0.25;
+  const exposure = drawdown >= 0.08 ? 0.08 : drawdown >= 0.05 ? 0.20 : drawdown >= 0.02 ? 0.35 : 0.55;
   const target = BigInt(Math.floor(equity * Math.min(exposure, maximumWeight / 10000)));
   // Reserve pool depths are micro-USDC, independently of the account quote scale.
   const depth = 1 / bar.c_depth.reduce((inverse, raw) => inverse + 1 / Number(raw), 0);
   if (!(depth > 0) || !Number.isFinite(depth)) return [];
   const quoteFactor = 10 ** (quoteScale - 6);
-  const impactRoom = BigInt(Math.floor(depth * quoteFactor * 0.0005));
+  const impactRoom = BigInt(Math.floor(depth * quoteFactor * 0.0004));
   let notional = target < cash ? target : cash;
   if (impactRoom < notional) notional = impactRoom;
   if (notional < minimumNotional) return [];
   const impactBps = Number(notional) / (depth * quoteFactor) * 10_000;
   const roundTripCost = 2 * (feeBps + slippageBps + impactBps);
   const expectedMove = meanReversionSignal ? band.edgeBps : Math.min(momentumMean, Math.max(mediumReturn, longReturn * 0.5));
-  if (expectedMove < roundTripCost + 8) return [];
+  if (expectedMove < roundTripCost + 4) return [];
   pendingKind = meanReversionSignal ? 'reversion' : 'trend';
   return [{ side: 'buy', client_id: `b${batch.seq}`, symbol: bar.symbol, notional_quote_units: notional.toString(), max_slippage_bps: MAX_SLIPPAGE_BPS }];
 }
