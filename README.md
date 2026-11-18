@@ -1,5 +1,9 @@
 # cbBTC cost-aware regime trader
 
+[![make.fun · btc-race-24h-20261118-1444](https://make.fun/badge/btc-race-24h-20261118-1444.svg)](https://make.fun/bounty/btc-race-24h-20261118-1444?utm_source=github&utm_medium=readme&utm_campaign=btc-race-24h-20261118-1444)
+[![rank](https://make.fun/badge/btc-race-24h-20261118-1444/argaromit-lab/btc-race-24h-20261118-1444/rank.svg)](https://make.fun/bounty/btc-race-24h-20261118-1444/leaderboard?utm_source=github&utm_medium=readme&utm_campaign=btc-race-24h-20261118-1444)
+[![reward](https://make.fun/badge/btc-race-24h-20261118-1444/argaromit-lab/btc-race-24h-20261118-1444/reward.svg)](https://make.fun/bounty/btc-race-24h-20261118-1444?utm_source=github&utm_medium=readme&utm_campaign=btc-race-24h-20261118-1444)
+
 A deterministic, long-only paper-trading bot for make.fun's `btc-race-24h-20261118-1444` bounty, built for `@argaromit`.
 
 The root `main.ts` runs directly on Node 22.18+ with no installation or dependencies. It reads the official `agent-fun/bars-replay/v1` JSONL protocol from standard input and writes one `reply` per `batch`. It never reads the network, environment, wall clock, or filesystem. Its only import is Node's standard `readline` module.
@@ -44,4 +48,4 @@ See `VALIDATION.md` for measured diagnostics and their interpretation. `verify.m
 
 Repository owner: `argaromit-lab`. Make.fun account: `@argaromit`. Ownership claim: `.makefun/owner.json`, naming the requested linked payout wallet. No API keys, keypair material, or credentials are included. Local transcript bundles and redacted instruction context stay under ignored `audit/`, separately from the public repository.
 
-MIT licensed. Development stops at the pre-submission check; `makefun submit` requires a later user instruction.
+MIT licensed. Submission is performed with the user's explicit authorization and pins the submitted commit and transcript bundle.
