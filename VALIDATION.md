@@ -1,4 +1,6 @@
-# Development validation
+# Conservative reference validation (commit 071720f)
+
+This is the protected main branch's previous conservative report. The high-conviction swing testing branch uses a different `main.ts`; see `SWING_RESULTS.md` and run `node verify-swing.mjs --save` for that experiment.
 
 The bot was built in one OpenCode session for the account `@argaromit`. The source is original code written in that session. No existing baseline implementation or third-party strategy was copied into the bot.
 
